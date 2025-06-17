@@ -1,0 +1,15 @@
+import { Metadata } from 'next'
+import AdminPanel from './AdminPanel'
+
+export const metadata: Metadata = {
+  title: 'Admin Panel | SEO Redirection System',
+  description: 'Create and manage SEO-optimized redirections with custom meta tags.',
+  robots: {
+    index: false,
+    follow: false,
+  },
+}
+
+export default function AdminPage() {
+  return <AdminPanel />
+}
