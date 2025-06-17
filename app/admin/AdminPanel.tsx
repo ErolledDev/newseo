@@ -619,55 +619,129 @@ export default function AdminPanel() {
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {Object.entries(redirects).map(([slug, data]) => (
-                      <div key={slug} className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
-                        <div className="flex items-start justify-between mb-4">
-                          <div className="flex-1 min-w-0">
-                            <h3 className="font-semibold text-gray-900 truncate" title={data.title}>
-                              {data.title}
-                            </h3>
-                            <p className="text-sm text-gray-500 mt-1">/{slug}</p>
+                      <div key={slug} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">
+                        {/* Image Preview */}
+                        {data.image ? (
+                          <div className="aspect-video overflow-hidden bg-gray-100">
+                            <img 
+                              src={data.image} 
+                              alt={data.title}
+                              className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.style.display = 'none';
+                                const parent = target.parentElement;
+                                if (parent) {
+                                  parent.innerHTML = `
+                                    <div class="w-full h-full flex items-center justify-center bg-gray-100">
+                                      <div class="text-center text-gray-400">
+                                        <svg class="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                        </svg>
+                                        <p class="text-sm">No Image</p>
+                                      </div>
+                                    </div>
+                                  `;
+                                }
+                              }}
+                            />
                           </div>
-                          <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-medium ml-2">
-                            {data.type}
-                          </span>
-                        </div>
-                        
-                        <p className="text-sm text-gray-600 mb-4 line-clamp-2">
-                          {data.desc}
-                        </p>
-                        
-                        {data.keywords && (
-                          <div className="flex flex-wrap gap-1 mb-4">
-                            {data.keywords.split(',').slice(0, 3).map((keyword, index) => (
-                              <span 
-                                key={index}
-                                className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs"
-                              >
-                                #{keyword.trim()}
-                              </span>
-                            ))}
+                        ) : (
+                          <div className="aspect-video bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
+                            <div className="text-center text-gray-400">
+                              <svg className="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                              <p className="text-sm font-medium">No Image</p>
+                            </div>
                           </div>
                         )}
                         
-                        <div className="flex items-center space-x-2">
-                          <button
-                            onClick={() => viewRedirect(slug)}
-                            className="flex-1 bg-green-600 text-white px-3 py-2 rounded text-sm hover:bg-green-700 transition-colors"
-                          >
-                            View
-                          </button>
-                          <button
-                            onClick={() => handleEdit(slug, data)}
-                            className="flex-1 bg-blue-600 text-white px-3 py-2 rounded text-sm hover:bg-blue-700 transition-colors"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => handleDelete(slug)}
-                            className="flex-1 bg-red-600 text-white px-3 py-2 rounded text-sm hover:bg-red-700 transition-colors"
-                          >
-                            Delete
-                          </button>
+                        <div className="p-6">
+                          {/* Header */}
+                          <div className="flex items-start justify-between mb-4">
+                            <div className="flex-1 min-w-0">
+                              <h3 className="font-bold text-gray-900 text-lg leading-tight mb-2" title={data.title}>
+                                {data.title.length > 50 ? `${data.title.substring(0, 50)}...` : data.title}
+                              </h3>
+                              <div className="flex items-center space-x-2 text-sm text-gray-500 mb-2">
+                                <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs font-medium">
+                                  {data.type}
+                                </span>
+                                <span>•</span>
+                                <span className="font-mono text-xs">/{slug}</span>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          {/* Description */}
+                          <p className="text-sm text-gray-600 mb-4 line-clamp-3 leading-relaxed">
+                            {data.desc.length > 120 ? `${data.desc.substring(0, 120)}...` : data.desc}
+                          </p>
+                          
+                          {/* Site Name */}
+                          {data.site_name && (
+                            <div className="flex items-center text-xs text-gray-500 mb-4">
+                              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9" />
+                              </svg>
+                              {data.site_name}
+                            </div>
+                          )}
+                          
+                          {/* Keywords */}
+                          {data.keywords && (
+                            <div className="flex flex-wrap gap-1 mb-4">
+                              {data.keywords.split(',').slice(0, 3).map((keyword, index) => (
+                                <span 
+                                  key={index}
+                                  className="bg-gray-100 text-gray-600 px-2 py-1 rounded-full text-xs font-medium"
+                                >
+                                  #{keyword.trim()}
+                                </span>
+                              ))}
+                              {data.keywords.split(',').length > 3 && (
+                                <span className="bg-gray-100 text-gray-500 px-2 py-1 rounded-full text-xs">
+                                  +{data.keywords.split(',').length - 3} more
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          
+                          {/* Action Buttons */}
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => viewRedirect(slug)}
+                              className="flex-1 bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors flex items-center justify-center"
+                              title="View redirect page"
+                            >
+                              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                              </svg>
+                              View
+                            </button>
+                            <button
+                              onClick={() => handleEdit(slug, data)}
+                              className="flex-1 bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex items-center justify-center"
+                              title="Edit redirect"
+                            >
+                              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDelete(slug)}
+                              className="flex-1 bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition-colors flex items-center justify-center"
+                              title="Delete redirect"
+                            >
+                              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                              Delete
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
