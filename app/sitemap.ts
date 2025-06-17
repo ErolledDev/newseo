@@ -1,18 +1,18 @@
 import { MetadataRoute } from 'next'
-import { promises as fs } from 'fs'
-import path from 'path'
+import { adminDb } from '../lib/firebase-admin'
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://your-domain.com'
   
-  // Read redirects from JSON file
-  let redirects = {}
+  // Read redirects from Firestore
+  let redirects: { [slug: string]: any } = {}
   try {
-    const filePath = path.join(process.cwd(), 'redirects.json')
-    const fileContents = await fs.readFile(filePath, 'utf8')
-    redirects = JSON.parse(fileContents)
+    const redirectsSnapshot = await adminDb.collection('redirects').get()
+    redirectsSnapshot.forEach((doc) => {
+      redirects[doc.id] = doc.data()
+    })
   } catch (error) {
-    console.log('No redirects.json found, generating basic sitemap')
+    console.log('No redirects found in Firestore, generating basic sitemap')
   }
 
   // Base routes

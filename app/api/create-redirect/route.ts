@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { promises as fs } from 'fs'
-import path from 'path'
+import { adminDb } from '../../../lib/firebase-admin'
 
 interface FormData {
   title: string
@@ -42,23 +41,13 @@ export async function POST(request: NextRequest) {
       slug = 'redirect-' + Date.now()
     }
     
-    const filePath = path.join(process.cwd(), 'redirects.json')
-    let redirects = {}
-    
-    try {
-      // Try to read existing file
-      const fileContents = await fs.readFile(filePath, 'utf8')
-      redirects = JSON.parse(fileContents)
-    } catch (error) {
-      // File doesn't exist or is invalid, start with empty object
-      console.log('Creating new redirects.json file or file was invalid')
-      redirects = {}
-    }
-    
     // Check if slug already exists (for new redirects, not updates)
-    if (!data.slug && redirects[slug]) {
-      // If slug exists, append timestamp
-      slug = `${slug}-${Date.now()}`
+    if (!data.slug) {
+      const existingDoc = await adminDb.collection('redirects').doc(slug).get()
+      if (existingDoc.exists) {
+        // If slug exists, append timestamp
+        slug = `${slug}-${Date.now()}`
+      }
     }
     
     // Create redirect data object
@@ -69,14 +58,13 @@ export async function POST(request: NextRequest) {
       image: data.image ? data.image.trim() : '',
       keywords: data.keywords ? data.keywords.trim() : '',
       site_name: data.site_name ? data.site_name.trim() : '',
-      type: data.type || 'website'
+      type: data.type || 'website',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     }
     
-    // Add or update redirect
-    redirects[slug] = redirectData
-    
-    // Write back to file with proper formatting
-    await fs.writeFile(filePath, JSON.stringify(redirects, null, 2), 'utf8')
+    // Add or update redirect in Firestore
+    await adminDb.collection('redirects').doc(slug).set(redirectData)
     
     // Generate URLs
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'

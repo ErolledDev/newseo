@@ -1,4 +1,5 @@
 import { Metadata } from 'next'
+import AuthGuard from '../../components/AuthGuard'
 import AdminPanel from './AdminPanel'
 
 export const metadata: Metadata = {
@@ -11,5 +12,9 @@ export const metadata: Metadata = {
 }
 
 export default function AdminPage() {
-  return <AdminPanel />
+  return (
+    <AuthGuard>
+      <AdminPanel />
+    </AuthGuard>
+  )
 }

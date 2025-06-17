@@ -1,7 +1,6 @@
 import { notFound } from 'next/navigation'
-import { promises as fs } from 'fs'
-import path from 'path'
 import { Metadata } from 'next'
+import { adminDb } from '../../lib/firebase-admin'
 import SlugRedirectPage from './SlugRedirectPage'
 
 interface RedirectData {
@@ -20,33 +19,50 @@ interface RedirectsData {
 
 async function getRedirectData(slug: string): Promise<RedirectData | null> {
   try {
-    const filePath = path.join(process.cwd(), 'redirects.json')
-    const fileContents = await fs.readFile(filePath, 'utf8')
-    const redirects: RedirectsData = JSON.parse(fileContents)
-    return redirects[slug] || null
+    const doc = await adminDb.collection('redirects').doc(slug).get()
+    if (doc.exists) {
+      const data = doc.data()
+      // Remove Firebase-specific fields
+      const { createdAt, updatedAt, ...redirectData } = data
+      return redirectData as RedirectData
+    }
+    return null
   } catch (error) {
-    console.error('Error reading redirects file:', error)
+    console.error('Error reading redirect data:', error)
     return null
   }
 }
 
 async function getAllRedirects(): Promise<RedirectsData> {
   try {
-    const filePath = path.join(process.cwd(), 'redirects.json')
-    const fileContents = await fs.readFile(filePath, 'utf8')
-    return JSON.parse(fileContents)
+    const redirectsSnapshot = await adminDb.collection('redirects').get()
+    const redirects: RedirectsData = {}
+    
+    redirectsSnapshot.forEach((doc) => {
+      const data = doc.data()
+      // Remove Firebase-specific fields
+      const { createdAt, updatedAt, ...redirectData } = data
+      redirects[doc.id] = redirectData as RedirectData
+    })
+    
+    return redirects
   } catch (error) {
-    console.error('Error reading redirects file:', error)
+    console.error('Error reading redirects:', error)
     return {}
   }
 }
 
 export async function generateStaticParams() {
-  const redirects = await getAllRedirects()
-  
-  return Object.keys(redirects).map((slug) => ({
-    slug: slug,
-  }))
+  try {
+    const redirects = await getAllRedirects()
+    
+    return Object.keys(redirects).map((slug) => ({
+      slug: slug,
+    }))
+  } catch (error) {
+    console.error('Error generating static params:', error)
+    return []
+  }
 }
 
 export async function generateMetadata(

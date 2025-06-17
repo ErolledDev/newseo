@@ -1,19 +1,19 @@
 import { NextResponse } from 'next/server'
-import { promises as fs } from 'fs'
-import path from 'path'
+import { adminDb } from '../../../lib/firebase-admin'
 
 export async function GET() {
   try {
-    const filePath = path.join(process.cwd(), 'redirects.json')
+    const redirectsSnapshot = await adminDb.collection('redirects').get()
+    const redirects: { [slug: string]: any } = {}
     
-    try {
-      const fileContents = await fs.readFile(filePath, 'utf8')
-      const redirects = JSON.parse(fileContents)
-      return NextResponse.json(redirects)
-    } catch (error) {
-      // File doesn't exist, return empty object
-      return NextResponse.json({})
-    }
+    redirectsSnapshot.forEach((doc) => {
+      const data = doc.data()
+      // Remove Firebase-specific fields before sending to client
+      const { createdAt, updatedAt, ...redirectData } = data
+      redirects[doc.id] = redirectData
+    })
+    
+    return NextResponse.json(redirects)
   } catch (error) {
     console.error('Error reading redirects:', error)
     return NextResponse.json(

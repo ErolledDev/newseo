@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useToast } from '../../components/ToastContainer'
+import { useAuth } from '../../hooks/useAuth'
 import Header from '../../components/Header'
 import SimpleFooter from '../../components/SimpleFooter'
 import Breadcrumb from '../../components/Breadcrumb'
@@ -22,6 +23,7 @@ interface FormData extends RedirectData {
 
 export default function AdminPanel() {
   const { showSuccess, showError, showConfirm } = useToast()
+  const { logout } = useAuth()
   const [activeTab, setActiveTab] = useState('create')
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [formData, setFormData] = useState<FormData>({
@@ -221,6 +223,24 @@ export default function AdminPanel() {
     window.open(`/${slug}`, '_blank')
   }
 
+  const handleLogout = async () => {
+    showConfirm(
+      'Logout',
+      'Are you sure you want to logout?',
+      async () => {
+        const result = await logout()
+        if (result.success) {
+          showSuccess('Logged Out', 'You have been successfully logged out.')
+        } else {
+          showError('Error', 'Failed to logout. Please try again.')
+        }
+      },
+      undefined,
+      'Logout',
+      'Cancel'
+    )
+  }
+
   const tabs = [
     { id: 'create', name: 'Create Redirect', icon: '➕' },
     { id: 'manage', name: 'Manage Redirects', icon: '📋' },
@@ -272,6 +292,19 @@ export default function AdminPanel() {
                 ))}
               </ul>
             </nav>
+
+            {/* Logout Button */}
+            <div className="p-4 border-t border-gray-200">
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center px-4 py-3 text-left rounded-lg transition-colors text-red-600 hover:bg-red-50"
+              >
+                <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                <span className="font-medium">Logout</span>
+              </button>
+            </div>
           </div>
         </div>
 
