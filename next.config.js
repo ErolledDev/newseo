@@ -1,10 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Configure for static export
-  output: 'export',
-  trailingSlash: true,
+  // Remove static export - this breaks API routes which are essential for the app
+  // output: 'export', // REMOVED - breaks API functionality
   
-  // Image optimization settings for static export
+  // Image optimization settings
   images: {
     unoptimized: true,
     domains: [
@@ -18,11 +17,6 @@ const nextConfig = {
   // Environment variable configuration
   env: {
     NEXT_PUBLIC_BASE_URL: process.env.NEXT_PUBLIC_BASE_URL,
-  },
-  
-  // Disable server-side features for static export
-  experimental: {
-    // Disable features that require server runtime
   },
   
   // Configure webpack for better optimization

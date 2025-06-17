@@ -7,7 +7,7 @@ export async function GET() {
 Allow: /
 
 # Sitemap
-Sitemap: ${baseUrl}/api/sitemap
+Sitemap: ${baseUrl}/sitemap.xml
 
 # Crawl-delay for better server performance
 Crawl-delay: 1
@@ -39,7 +39,7 @@ Disallow: /_next/
 Disallow: /static/
 
 # Allow sitemap access
-Allow: /api/sitemap`
+Allow: /sitemap.xml`
 
   return new NextResponse(robotsTxt, {
     headers: {

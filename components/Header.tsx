@@ -25,7 +25,7 @@ export default function Header() {
               Home
             </Link>
             <Link 
-              href="/api/sitemap" 
+              href="/sitemap.xml" 
               target="_blank"
               className="text-sm font-medium text-gray-600 hover:text-blue-600 transition-colors"
             >

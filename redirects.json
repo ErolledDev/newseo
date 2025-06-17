@@ -26,15 +26,6 @@
     "site_name": "Design Weekly",
     "type": "article"
   },
-  "remote-work-productivity-tips": {
-    "title": "Remote Work Mastery: 20 Productivity Tips for Maximum Efficiency | 101",
-    "desc": "Master the art of remote work with proven productivity strategies. Learn how to create an effective home office, manage distractions, maintain work-life balance, and use the best tools for remote collaboration. Perfect for remote workers and managers.",
-    "url": "https://example.com/remote-work-productivity",
-    "image": "https://images.unsplash.com/photo-1521791136064-7986c2920216?w=1200&h=630&fit=crop",
-    "keywords": "remote work, work from home, productivity tips, remote work tools, work-life balance",
-    "site_name": "Remote Work Hub",
-    "type": "article"
-  },
   "cryptocurrency-investing-beginners": {
     "title": "Cryptocurrency Investing for Beginners: A Safe and Smart Approach",
     "desc": "Start your cryptocurrency investment journey with confidence. Learn the fundamentals of crypto investing, how to choose the right coins, manage risks, and build a diversified portfolio. Includes beginner-friendly strategies and common mistakes to avoid.",
@@ -56,10 +47,10 @@
   "personal-finance-budgeting-guide": {
     "title": "Personal Finance Mastery: The Complete Budgeting Guide for 2025",
     "desc": "Take control of your finances with our comprehensive budgeting guide. Learn how to create a realistic budget, track expenses, build an emergency fund, and achieve your financial goals. Includes free templates and expert tips for financial success.",
-    "url": "https://example.com/personal-finance-budgeting",
+    "url": "https://example.com/personal-finance-budgeting-das",
     "image": "https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=1200&h=630&fit=crop",
     "keywords": "personal finance, budgeting, financial planning, money management, savings",
-    "site_name": "Finance Guru",
+    "site_name": "Finance Gurud ads",
     "type": "article"
   },
   "mental-health-workplace-wellness": {

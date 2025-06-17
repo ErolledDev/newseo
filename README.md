@@ -41,7 +41,8 @@ A Next.js application for creating SEO-optimized redirections with custom meta t
 - `/[slug]` - Dynamic route for slug-based redirects
 - `/u` - Parameter-based redirect page
 - `/admin` - Admin interface for creating redirects
-- `/api/sitemap` - Generates sitemap.xml
+- `/sitemap.xml` - Generates sitemap.xml
+- `/robots.txt` - Robots.txt file
 
 ## Environment Variables
 
@@ -52,9 +53,18 @@ NEXT_PUBLIC_BASE_URL=https://yourdomain.com
 
 ## Deployment
 
-This is a static Next.js application that can be deployed to:
+This is a Next.js application with API routes that can be deployed to:
+- Vercel (recommended)
 - Netlify
-- Vercel
-- Any static hosting provider
+- Any Node.js hosting provider
 
 The `redirects.json` file will be created automatically when you create your first redirect.
+
+## Development
+
+```bash
+npm install
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) to view the application.
