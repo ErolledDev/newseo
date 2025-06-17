@@ -11,6 +11,11 @@ let adminApp: any = null
 let adminDb: any = null
 
 try {
+  // Validate required environment variables
+  if (!firebaseAdminConfig.projectId || !firebaseAdminConfig.clientEmail || !firebaseAdminConfig.privateKey) {
+    throw new Error('Missing required Firebase Admin environment variables')
+  }
+
   // Initialize Firebase Admin
   adminApp = getApps().length === 0 
     ? initializeApp({
@@ -21,6 +26,8 @@ try {
 
   // Initialize Admin Firestore
   adminDb = getFirestore(adminApp)
+  
+  console.log('Firebase Admin initialized successfully')
 } catch (error) {
   console.warn('Firebase Admin initialization failed, using fallback mode:', error)
   
