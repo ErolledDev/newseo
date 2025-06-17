@@ -10,6 +10,36 @@ const firebaseAdminConfig = {
 let adminApp: any = null
 let adminDb: any = null
 
+// Create a mock database interface for fallback
+const createMockDb = () => ({
+  collection: (name: string) => ({
+    doc: (id: string) => ({
+      get: async () => ({ exists: false, data: () => null }),
+      set: async (data: any) => { 
+        console.warn('Firebase unavailable - data not saved:', { id, data })
+        throw new Error('Firebase connection unavailable')
+      },
+      update: async (data: any) => {
+        console.warn('Firebase unavailable - update operation failed')
+        throw new Error('Firebase connection unavailable')
+      },
+      delete: async () => {
+        console.warn('Firebase unavailable - delete operation failed')
+        throw new Error('Firebase connection unavailable')
+      }
+    }),
+    get: async () => ({
+      forEach: (callback: any) => {
+        console.warn('Firebase unavailable - no data returned')
+      }
+    }),
+    add: async (data: any) => {
+      console.warn('Firebase unavailable - data not added:', data)
+      throw new Error('Firebase connection unavailable')
+    }
+  })
+})
+
 try {
   // Validate required environment variables
   if (!firebaseAdminConfig.projectId || !firebaseAdminConfig.clientEmail || !firebaseAdminConfig.privateKey) {
@@ -31,31 +61,8 @@ try {
 } catch (error) {
   console.warn('Firebase Admin initialization failed, using fallback mode:', error)
   
-  // Create a mock database interface for fallback
-  adminDb = {
-    collection: (name: string) => ({
-      doc: (id: string) => ({
-        get: async () => ({ exists: false, data: () => null }),
-        set: async (data: any) => { 
-          console.warn('Firebase unavailable - data not saved:', { id, data })
-          throw new Error('Firebase connection unavailable')
-        },
-        delete: async () => {
-          console.warn('Firebase unavailable - delete operation failed')
-          throw new Error('Firebase connection unavailable')
-        }
-      }),
-      get: async () => ({
-        forEach: (callback: any) => {
-          console.warn('Firebase unavailable - no data returned')
-        }
-      }),
-      add: async (data: any) => {
-        console.warn('Firebase unavailable - data not added:', data)
-        throw new Error('Firebase connection unavailable')
-      }
-    })
-  }
+  // Use mock database interface for fallback
+  adminDb = createMockDb()
 }
 
 export { adminDb }

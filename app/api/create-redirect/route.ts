@@ -45,6 +45,11 @@ const readRedirectsFromFile = (): { [slug: string]: RedirectData } => {
 const writeRedirectsToFile = (redirects: { [slug: string]: RedirectData }) => {
   try {
     const filePath = getRedirectsFilePath()
+    // Ensure directory exists
+    const dir = path.dirname(filePath)
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true })
+    }
     fs.writeFileSync(filePath, JSON.stringify(redirects, null, 2))
   } catch (error) {
     console.error('Error writing redirects file:', error)
@@ -100,27 +105,37 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    let useFirebase = true
+    let useFirebase = false
+    let errorMessage = ''
     
     try {
       // Try Firebase first
       await adminDb.collection('redirects').doc(slug).set(redirectData)
+      useFirebase = true
       console.log(`Successfully saved to Firebase: ${slug}`)
     } catch (firebaseError) {
-      console.warn('Firebase save failed, using file fallback:', firebaseError)
-      useFirebase = false
+      console.warn('Firebase save failed, using file fallback:', firebaseError?.message || firebaseError)
+      errorMessage = firebaseError?.message || 'Firebase connection failed'
       
       // Fallback to file storage
-      const redirects = readRedirectsFromFile()
-      
-      // Check if slug already exists (for new redirects, not updates)
-      if (!data.slug && redirects[slug]) {
-        slug = `${slug}-${Date.now()}`
+      try {
+        const redirects = readRedirectsFromFile()
+        
+        // Check if slug already exists (for new redirects, not updates)
+        if (!data.slug && redirects[slug]) {
+          slug = `${slug}-${Date.now()}`
+        }
+        
+        redirects[slug] = redirectData
+        writeRedirectsToFile(redirects)
+        console.log(`Successfully saved to file: ${slug}`)
+      } catch (fileError) {
+        console.error('File storage also failed:', fileError)
+        return NextResponse.json(
+          { error: 'Failed to save redirect. Both Firebase and file storage failed.' },
+          { status: 500 }
+        )
       }
-      
-      redirects[slug] = redirectData
-      writeRedirectsToFile(redirects)
-      console.log(`Successfully saved to file: ${slug}`)
     }
     
     // Generate URLs
@@ -143,7 +158,8 @@ export async function POST(request: NextRequest) {
       short: shortUrl,
       slug: slug,
       success: true,
-      storage: useFirebase ? 'firebase' : 'file'
+      storage: useFirebase ? 'firebase' : 'file',
+      ...(errorMessage && { warning: `Firebase failed (${errorMessage}), used file storage as fallback` })
     })
     
   } catch (error) {

@@ -23,6 +23,11 @@ const readRedirectsFromFile = () => {
 const writeRedirectsToFile = (redirects: any) => {
   try {
     const filePath = getRedirectsFilePath()
+    // Ensure directory exists
+    const dir = path.dirname(filePath)
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true })
+    }
     fs.writeFileSync(filePath, JSON.stringify(redirects, null, 2))
   } catch (error) {
     console.error('Error writing redirects file:', error)
@@ -46,13 +51,18 @@ export async function DELETE(request: NextRequest) {
     const trimmedSlug = slug.trim()
     console.log('Processing delete for slug:', trimmedSlug)
     
-    let useFirebase = true
+    let useFirebase = false
     let deletedItem: any = null
     
     try {
-      // Try Firebase first
+      // Try Firebase first with timeout
       const docRef = adminDb.collection('redirects').doc(trimmedSlug)
-      const doc = await docRef.get()
+      const doc = await Promise.race([
+        docRef.get(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Firebase timeout')), 5000)
+        )
+      ])
       
       if (!doc.exists) {
         throw new Error('Document not found in Firebase')
@@ -60,10 +70,10 @@ export async function DELETE(request: NextRequest) {
       
       deletedItem = doc.data()
       await docRef.delete()
+      useFirebase = true
       console.log(`Successfully deleted from Firebase: ${trimmedSlug}`)
     } catch (firebaseError) {
-      console.warn('Firebase delete failed, using file fallback:', firebaseError)
-      useFirebase = false
+      console.warn('Firebase delete failed, using file fallback:', firebaseError?.message || firebaseError)
       
       // Fallback to file storage
       const redirects = readRedirectsFromFile()

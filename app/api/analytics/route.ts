@@ -23,6 +23,11 @@ const readRedirectsFromFile = () => {
 const writeRedirectsToFile = (redirects: any) => {
   try {
     const filePath = getRedirectsFilePath()
+    // Ensure directory exists
+    const dir = path.dirname(filePath)
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true })
+    }
     fs.writeFileSync(filePath, JSON.stringify(redirects, null, 2))
   } catch (error) {
     console.error('Error writing redirects file:', error)
@@ -36,8 +41,14 @@ export async function GET() {
     let analytics: { [slug: string]: any } = {}
     
     try {
-      // Try Firebase first
-      const redirectsSnapshot = await adminDb.collection('redirects').get()
+      // Try Firebase first with timeout
+      const redirectsSnapshot = await Promise.race([
+        adminDb.collection('redirects').get(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Firebase timeout')), 5000)
+        )
+      ])
+      
       redirectsSnapshot.forEach((doc: any) => {
         const data = doc.data()
         analytics[doc.id] = {
@@ -52,7 +63,7 @@ export async function GET() {
       })
       console.log('Successfully loaded analytics from Firebase')
     } catch (firebaseError) {
-      console.warn('Firebase analytics read failed, using file fallback:', firebaseError)
+      console.warn('Firebase analytics read failed, using file fallback:', firebaseError?.message || firebaseError)
       
       // Fallback to file storage
       const fileRedirects = readRedirectsFromFile()
@@ -72,7 +83,11 @@ export async function GET() {
       console.log('Successfully loaded analytics from file')
     }
     
-    return NextResponse.json(analytics)
+    return NextResponse.json(analytics, {
+      headers: {
+        'Cache-Control': 'public, max-age=60, s-maxage=60',
+      }
+    })
   } catch (error) {
     console.error('Error reading analytics:', error)
     return NextResponse.json(
@@ -102,12 +117,17 @@ export async function POST(request: NextRequest) {
     }
     
     const now = new Date().toISOString()
-    let useFirebase = true
+    let useFirebase = false
     
     try {
-      // Try Firebase first
+      // Try Firebase first with timeout
       const docRef = adminDb.collection('redirects').doc(slug)
-      const doc = await docRef.get()
+      const doc = await Promise.race([
+        docRef.get(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Firebase timeout')), 5000)
+        )
+      ])
       
       if (!doc.exists) {
         throw new Error('Document not found in Firebase')
@@ -134,10 +154,10 @@ export async function POST(request: NextRequest) {
         updatedAt: now
       })
       
+      useFirebase = true
       console.log(`Successfully tracked ${event} for ${slug} in Firebase`)
     } catch (firebaseError) {
-      console.warn('Firebase analytics update failed, using file fallback:', firebaseError)
-      useFirebase = false
+      console.warn('Firebase analytics update failed, using file fallback:', firebaseError?.message || firebaseError)
       
       // Fallback to file storage
       const redirects = readRedirectsFromFile()

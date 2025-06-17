@@ -23,10 +23,17 @@ const readRedirectsFromFile = () => {
 export async function GET() {
   try {
     let redirects: { [slug: string]: any } = {}
+    let useFirebase = false
     
     try {
-      // Try Firebase first
-      const redirectsSnapshot = await adminDb.collection('redirects').get()
+      // Try Firebase first with timeout
+      const redirectsSnapshot = await Promise.race([
+        adminDb.collection('redirects').get(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Firebase timeout')), 5000)
+        )
+      ])
+      
       redirectsSnapshot.forEach((doc: any) => {
         const data = doc.data()
         // Remove Firebase-specific fields before sending to client
@@ -34,9 +41,10 @@ export async function GET() {
         redirects[doc.id] = redirectData
       })
       
+      useFirebase = true
       console.log('Successfully loaded from Firebase')
     } catch (firebaseError) {
-      console.warn('Firebase read failed, using file fallback:', firebaseError)
+      console.warn('Firebase read failed, using file fallback:', firebaseError?.message || firebaseError)
       
       // Fallback to file storage
       const fileRedirects = readRedirectsFromFile()
@@ -50,7 +58,11 @@ export async function GET() {
       console.log('Successfully loaded from file')
     }
     
-    return NextResponse.json(redirects)
+    return NextResponse.json(redirects, {
+      headers: {
+        'Cache-Control': 'public, max-age=60, s-maxage=60',
+      }
+    })
   } catch (error) {
     console.error('Error reading redirects:', error)
     return NextResponse.json(

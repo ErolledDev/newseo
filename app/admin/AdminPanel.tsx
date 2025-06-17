@@ -1,10 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useToast } from '../../components/ToastContainer'
 import { useAuth } from '../../hooks/useAuth'
-import Header from '../../components/Header'
-import SimpleFooter from '../../components/SimpleFooter'
+import { useToast } from '../../components/ToastContainer'
 import Breadcrumb from '../../components/Breadcrumb'
 
 interface RedirectData {
@@ -17,13 +15,8 @@ interface RedirectData {
   type: string
 }
 
-interface FormData extends RedirectData {
-  slug: string
-}
-
-interface AnalyticsData {
-  title: string
-  analytics: {
+interface RedirectWithAnalytics extends RedirectData {
+  analytics?: {
     views: number
     clicks: number
     lastViewed: string
@@ -32,11 +25,10 @@ interface AnalyticsData {
 }
 
 export default function AdminPanel() {
+  const { user, logout } = useAuth()
   const { showSuccess, showError, showConfirm } = useToast()
-  const { logout } = useAuth()
-  const [activeTab, setActiveTab] = useState('create')
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
-  const [formData, setFormData] = useState<FormData>({
+  
+  const [formData, setFormData] = useState({
     title: '',
     desc: '',
     url: '',
@@ -46,42 +38,44 @@ export default function AdminPanel() {
     type: 'website',
     slug: ''
   })
+  
+  const [redirects, setRedirects] = useState<{ [slug: string]: RedirectWithAnalytics }>({})
+  const [analytics, setAnalytics] = useState<{ [slug: string]: any }>({})
   const [isLoading, setIsLoading] = useState(false)
-  const [redirects, setRedirects] = useState<{ [slug: string]: RedirectData }>({})
-  const [analytics, setAnalytics] = useState<{ [slug: string]: AnalyticsData }>({})
-  const [generatedUrls, setGeneratedUrls] = useState<{ long: string; short: string } | null>(null)
-  const [editingSlug, setEditingSlug] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [activeTab, setActiveTab] = useState<'create' | 'manage' | 'analytics'>('create')
 
-  // Fetch existing redirects
+  // Load redirects and analytics on component mount
   useEffect(() => {
-    fetchRedirects()
-    if (activeTab === 'analytics') {
-      fetchAnalytics()
-    }
-  }, [activeTab])
+    loadRedirects()
+    loadAnalytics()
+  }, [])
 
-  const fetchRedirects = async () => {
+  const loadRedirects = async () => {
     try {
       const response = await fetch('/api/get-redirects')
       if (response.ok) {
         const data = await response.json()
         setRedirects(data)
+      } else {
+        console.error('Failed to load redirects')
       }
     } catch (error) {
-      console.error('Error fetching redirects:', error)
+      console.error('Error loading redirects:', error)
     }
   }
 
-  const fetchAnalytics = async () => {
+  const loadAnalytics = async () => {
     try {
       const response = await fetch('/api/analytics')
       if (response.ok) {
         const data = await response.json()
         setAnalytics(data)
+      } else {
+        console.error('Failed to load analytics')
       }
     } catch (error) {
-      console.error('Error fetching analytics:', error)
-      showError('Error', 'Failed to load analytics data')
+      console.error('Error loading analytics:', error)
     }
   }
 
@@ -105,7 +99,7 @@ export default function AdminPanel() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setIsLoading(true)
+    setIsSubmitting(true)
 
     try {
       // Generate slug if not provided
@@ -118,63 +112,44 @@ export default function AdminPanel() {
         },
         body: JSON.stringify({
           ...formData,
-          slug: editingSlug || slug
+          slug
         }),
       })
 
       const result = await response.json()
 
       if (response.ok) {
-        setGeneratedUrls({
-          long: result.long,
-          short: result.short
+        showSuccess('Redirect Created', `Successfully created redirect: ${result.slug}`)
+        
+        // Reset form
+        setFormData({
+          title: '',
+          desc: '',
+          url: '',
+          image: '',
+          keywords: '',
+          site_name: '',
+          type: 'website',
+          slug: ''
         })
         
-        const storageType = result.storage === 'firebase' ? 'Firebase' : 'Local File'
-        showSuccess(
-          editingSlug ? 'Redirect Updated!' : 'Redirect Created!',
-          `Your ${editingSlug ? 'updated' : 'new'} redirect is ready to use. Saved to: ${storageType}`
-        )
+        // Reload redirects
+        await loadRedirects()
         
-        // Reset form if creating new
-        if (!editingSlug) {
-          setFormData({
-            title: '',
-            desc: '',
-            url: '',
-            image: '',
-            keywords: '',
-            site_name: '',
-            type: 'website',
-            slug: ''
-          })
-        }
-        
-        setEditingSlug(null)
-        // Refresh the redirects list immediately
-        await fetchRedirects()
+        // Switch to manage tab to show the new redirect
+        setActiveTab('manage')
       } else {
-        showError('Error', result.error || 'Failed to create redirect')
+        showError('Creation Failed', result.error || 'Failed to create redirect')
       }
     } catch (error) {
-      showError('Error', 'Network error. Please try again.')
+      console.error('Error creating redirect:', error)
+      showError('Creation Failed', 'An unexpected error occurred')
     } finally {
-      setIsLoading(false)
+      setIsSubmitting(false)
     }
   }
 
-  const handleEdit = (slug: string, data: RedirectData) => {
-    setFormData({
-      ...data,
-      slug
-    })
-    setEditingSlug(slug)
-    setGeneratedUrls(null)
-    setActiveTab('create') // Switch to create tab for editing
-    setIsMobileMenuOpen(false) // Close mobile menu
-  }
-
-  const handleDelete = (slug: string) => {
+  const handleDelete = async (slug: string) => {
     showConfirm(
       'Delete Redirect',
       `Are you sure you want to delete "${slug}"? This action cannot be undone.`,
@@ -184,33 +159,18 @@ export default function AdminPanel() {
             method: 'DELETE',
           })
 
+          const result = await response.json()
+
           if (response.ok) {
-            showSuccess('Deleted!', 'Redirect has been deleted successfully.')
-            
-            // Clear form if editing this redirect
-            if (editingSlug === slug) {
-              setFormData({
-                title: '',
-                desc: '',
-                url: '',
-                image: '',
-                keywords: '',
-                site_name: '',
-                type: 'website',
-                slug: ''
-              })
-              setEditingSlug(null)
-              setGeneratedUrls(null)
-            }
-            
-            // Refresh the redirects list immediately
-            await fetchRedirects()
+            showSuccess('Redirect Deleted', `Successfully deleted "${slug}"`)
+            await loadRedirects()
+            await loadAnalytics()
           } else {
-            const result = await response.json()
-            showError('Error', result.error || 'Failed to delete redirect')
+            showError('Deletion Failed', result.error || 'Failed to delete redirect')
           }
         } catch (error) {
-          showError('Error', 'Network error. Please try again.')
+          console.error('Error deleting redirect:', error)
+          showError('Deletion Failed', 'An unexpected error occurred')
         }
       },
       undefined,
@@ -219,932 +179,411 @@ export default function AdminPanel() {
     )
   }
 
-  const cancelEdit = () => {
-    setEditingSlug(null)
-    setFormData({
-      title: '',
-      desc: '',
-      url: '',
-      image: '',
-      keywords: '',
-      site_name: '',
-      type: 'website',
-      slug: ''
-    })
-    setGeneratedUrls(null)
+  const handleLogout = async () => {
+    const result = await logout()
+    if (result.success) {
+      showSuccess('Logged Out', 'You have been successfully logged out')
+    } else {
+      showError('Logout Failed', result.error || 'Failed to logout')
+    }
   }
 
-  const copyToClipboard = async (text: string) => {
+  const copyToClipboard = async (text: string, label: string) => {
     try {
       await navigator.clipboard.writeText(text)
-      showSuccess('Copied!', 'URL copied to clipboard')
-    } catch (err) {
-      showError('Error', 'Failed to copy URL')
+      showSuccess('Copied!', `${label} copied to clipboard`)
+    } catch (error) {
+      showError('Copy Failed', 'Failed to copy to clipboard')
     }
   }
 
   const downloadSitemap = () => {
-    window.open('/sitemap.xml', '_blank')
+    window.open('/api/sitemap', '_blank')
   }
 
-  const viewRedirect = (slug: string) => {
-    window.open(`/${slug}`, '_blank')
-  }
-
-  const handleLogout = async () => {
-    showConfirm(
-      'Logout',
-      'Are you sure you want to logout?',
-      async () => {
-        const result = await logout()
-        if (result.success) {
-          showSuccess('Logged Out', 'You have been successfully logged out.')
-        } else {
-          showError('Error', 'Failed to logout. Please try again.')
-        }
-      },
-      undefined,
-      'Logout',
-      'Cancel'
-    )
-  }
-
-  const formatDate = (dateString: string) => {
-    if (!dateString) return 'Never'
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-  }
-
-  const getTotalViews = () => {
-    return Object.values(analytics).reduce((total, item) => total + (item.analytics?.views || 0), 0)
-  }
-
-  const getTotalClicks = () => {
-    return Object.values(analytics).reduce((total, item) => total + (item.analytics?.clicks || 0), 0)
-  }
-
-  const getTopPerformers = () => {
-    return Object.entries(analytics)
-      .sort(([, a], [, b]) => (b.analytics?.views || 0) - (a.analytics?.views || 0))
-      .slice(0, 5)
-  }
-
-  const tabs = [
-    { id: 'create', name: 'Create Redirect', icon: '➕' },
-    { id: 'manage', name: 'Manage Redirects', icon: '📋' },
-    { id: 'analytics', name: 'Analytics', icon: '📊' },
-    { id: 'tools', name: 'SEO Tools', icon: '🛠️' }
-  ]
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header />
-      
-      <div className="flex h-screen pt-16">
-        {/* Mobile Menu Button */}
-        <button
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="lg:hidden fixed top-20 left-4 z-50 bg-white p-2 rounded-lg shadow-md"
-        >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
-        </button>
-
-        {/* Sidebar */}
-        <div className={`${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 fixed lg:static inset-y-0 left-0 z-40 w-64 bg-white shadow-lg transition-transform duration-300 ease-in-out lg:shadow-none border-r border-gray-200`}>
-          <div className="flex flex-col h-full pt-16 lg:pt-0">
-            <div className="p-6 border-b border-gray-200">
-              <h2 className="text-xl font-bold text-gray-900">Admin Panel</h2>
-              <p className="text-sm text-gray-600 mt-1">Manage your redirects</p>
+      {/* Header */}
+      <header className="bg-white shadow-sm border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center py-4">
+            <div className="flex items-center space-x-4">
+              <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center">
+                <span className="text-white font-bold text-lg">S</span>
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-gray-900">Admin Panel</h1>
+                <p className="text-sm text-gray-500">SEO Redirection System</p>
+              </div>
             </div>
             
-            <nav className="flex-1 p-4">
-              <ul className="space-y-2">
-                {tabs.map((tab) => (
-                  <li key={tab.id}>
-                    <button
-                      onClick={() => {
-                        setActiveTab(tab.id)
-                        setIsMobileMenuOpen(false)
-                      }}
-                      className={`w-full flex items-center px-4 py-3 text-left rounded-lg transition-colors ${
-                        activeTab === tab.id
-                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                          : 'text-gray-700 hover:bg-gray-50'
-                      }`}
-                    >
-                      <span className="text-lg mr-3">{tab.icon}</span>
-                      <span className="font-medium">{tab.name}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </nav>
-
-            {/* Logout Button */}
-            <div className="p-4 border-t border-gray-200">
+            <div className="flex items-center space-x-4">
+              <span className="text-sm text-gray-600">Welcome, {user?.email}</span>
               <button
                 onClick={handleLogout}
-                className="w-full flex items-center px-4 py-3 text-left rounded-lg transition-colors text-red-600 hover:bg-red-50"
+                className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
               >
-                <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                </svg>
-                <span className="font-medium">Logout</span>
+                Logout
               </button>
             </div>
           </div>
         </div>
+      </header>
 
-        {/* Mobile Overlay */}
-        {isMobileMenuOpen && (
-          <div
-            className="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30"
-            onClick={() => setIsMobileMenuOpen(false)}
-          />
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <Breadcrumb currentPage="Admin Panel" />
+
+        {/* Tab Navigation */}
+        <div className="mb-8">
+          <nav className="flex space-x-8">
+            {[
+              { id: 'create', label: 'Create Redirect', icon: '➕' },
+              { id: 'manage', label: 'Manage Redirects', icon: '📋' },
+              { id: 'analytics', label: 'Analytics', icon: '📊' }
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                  activeTab === tab.id
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50'
+                }`}
+              >
+                <span>{tab.icon}</span>
+                <span>{tab.label}</span>
+              </button>
+            ))}
+          </nav>
+        </div>
+
+        {/* Create Redirect Tab */}
+        {activeTab === 'create' && (
+          <div className="bg-white rounded-2xl shadow-lg p-8">
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">Create New Redirect</h2>
+              <p className="text-gray-600">Fill in the details to create a new SEO-optimized redirect</p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-2">
+                    Title *
+                  </label>
+                  <input
+                    type="text"
+                    id="title"
+                    name="title"
+                    value={formData.title}
+                    onChange={handleInputChange}
+                    required
+                    className="input-field"
+                    placeholder="Enter the page title"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="url" className="block text-sm font-medium text-gray-700 mb-2">
+                    Destination URL *
+                  </label>
+                  <input
+                    type="url"
+                    id="url"
+                    name="url"
+                    value={formData.url}
+                    onChange={handleInputChange}
+                    required
+                    className="input-field"
+                    placeholder="https://example.com/article"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="desc" className="block text-sm font-medium text-gray-700 mb-2">
+                  Description *
+                </label>
+                <textarea
+                  id="desc"
+                  name="desc"
+                  value={formData.desc}
+                  onChange={handleInputChange}
+                  required
+                  rows={3}
+                  className="input-field"
+                  placeholder="Enter a compelling description for SEO"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label htmlFor="image" className="block text-sm font-medium text-gray-700 mb-2">
+                    Image URL
+                  </label>
+                  <input
+                    type="url"
+                    id="image"
+                    name="image"
+                    value={formData.image}
+                    onChange={handleInputChange}
+                    className="input-field"
+                    placeholder="https://example.com/image.jpg"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="site_name" className="block text-sm font-medium text-gray-700 mb-2">
+                    Site Name
+                  </label>
+                  <input
+                    type="text"
+                    id="site_name"
+                    name="site_name"
+                    value={formData.site_name}
+                    onChange={handleInputChange}
+                    className="input-field"
+                    placeholder="Your Site Name"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label htmlFor="keywords" className="block text-sm font-medium text-gray-700 mb-2">
+                    Keywords
+                  </label>
+                  <input
+                    type="text"
+                    id="keywords"
+                    name="keywords"
+                    value={formData.keywords}
+                    onChange={handleInputChange}
+                    className="input-field"
+                    placeholder="keyword1, keyword2, keyword3"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="type" className="block text-sm font-medium text-gray-700 mb-2">
+                    Content Type
+                  </label>
+                  <select
+                    id="type"
+                    name="type"
+                    value={formData.type}
+                    onChange={handleInputChange}
+                    className="input-field"
+                  >
+                    <option value="website">Website</option>
+                    <option value="article">Article</option>
+                    <option value="blog">Blog</option>
+                    <option value="product">Product</option>
+                    <option value="video">Video</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="slug" className="block text-sm font-medium text-gray-700 mb-2">
+                  Custom Slug (Optional)
+                </label>
+                <input
+                  type="text"
+                  id="slug"
+                  name="slug"
+                  value={formData.slug}
+                  onChange={handleInputChange}
+                  className="input-field"
+                  placeholder="custom-url-slug (leave empty to auto-generate)"
+                />
+                <p className="text-sm text-gray-500 mt-1">
+                  If empty, will be auto-generated from title
+                </p>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Creating...
+                    </>
+                  ) : (
+                    'Create Redirect'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
         )}
 
-        {/* Main Content */}
-        <div className="flex-1 overflow-auto">
-          <div className="p-6 lg:p-8">
-            <Breadcrumb currentPage="Admin Panel" />
-            
-            {/* Create Redirect Tab */}
-            {activeTab === 'create' && (
-              <div className="max-w-4xl">
-                <div className="mb-8">
-                  <h1 className="text-3xl font-bold text-gray-900 mb-2">
-                    {editingSlug ? 'Edit Redirect' : 'Create New Redirect'}
-                  </h1>
-                  <p className="text-gray-600">
-                    {editingSlug 
-                      ? 'Update your existing redirect with new information'
-                      : 'Generate SEO-optimized URLs with custom meta tags for better search engine visibility'
-                    }
-                  </p>
+        {/* Manage Redirects Tab */}
+        {activeTab === 'manage' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-2xl shadow-lg p-8">
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900 mb-2">Manage Redirects</h2>
+                  <p className="text-gray-600">View and manage all your redirects</p>
                 </div>
+                <button
+                  onClick={downloadSitemap}
+                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors font-medium"
+                >
+                  Download Sitemap
+                </button>
+              </div>
 
-                <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
-                  {/* Form Section */}
-                  <div className="xl:col-span-3">
-                    <div className="bg-white rounded-lg shadow p-6">
-                      <form onSubmit={handleSubmit} className="space-y-6">
-                        {editingSlug && (
-                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <h3 className="text-sm font-medium text-blue-800">Editing Redirect</h3>
-                                <p className="text-sm text-blue-600">Slug: {editingSlug}</p>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={cancelEdit}
-                                className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                              >
-                                Cancel Edit
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <div>
-                            <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-2">
-                              Title *
-                            </label>
-                            <input
-                              type="text"
-                              id="title"
-                              name="title"
-                              value={formData.title}
-                              onChange={handleInputChange}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                              placeholder="Enter page title"
-                              required
-                            />
-                          </div>
-
-                          <div>
-                            <label htmlFor="type" className="block text-sm font-medium text-gray-700 mb-2">
-                              Content Type
-                            </label>
-                            <select
-                              id="type"
-                              name="type"
-                              value={formData.type}
-                              onChange={handleInputChange}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            >
-                              <option value="website">Website</option>
-                              <option value="article">Article</option>
-                              <option value="blog">Blog Post</option>
-                              <option value="product">Product</option>
-                              <option value="video">Video</option>
-                            </select>
-                          </div>
-                        </div>
-
-                        <div>
-                          <label htmlFor="desc" className="block text-sm font-medium text-gray-700 mb-2">
-                            Description *
-                          </label>
-                          <textarea
-                            id="desc"
-                            name="desc"
-                            value={formData.desc}
-                            onChange={handleInputChange}
-                            rows={4}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            placeholder="Enter page description"
-                            required
-                          />
-                        </div>
-
-                        <div>
-                          <label htmlFor="url" className="block text-sm font-medium text-gray-700 mb-2">
-                            Target URL *
-                          </label>
-                          <input
-                            type="url"
-                            id="url"
-                            name="url"
-                            value={formData.url}
-                            onChange={handleInputChange}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            placeholder="https://example.com/your-page"
-                            required
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <div>
-                            <label htmlFor="image" className="block text-sm font-medium text-gray-700 mb-2">
-                              Featured Image URL
-                            </label>
-                            <input
-                              type="url"
-                              id="image"
-                              name="image"
-                              value={formData.image}
-                              onChange={handleInputChange}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                              placeholder="https://example.com/image.jpg"
-                            />
-                          </div>
-
-                          <div>
-                            <label htmlFor="site_name" className="block text-sm font-medium text-gray-700 mb-2">
-                              Site Name
-                            </label>
-                            <input
-                              type="text"
-                              id="site_name"
-                              name="site_name"
-                              value={formData.site_name}
-                              onChange={handleInputChange}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                              placeholder="Your Site Name"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <div>
-                            <label htmlFor="keywords" className="block text-sm font-medium text-gray-700 mb-2">
-                              Keywords (comma-separated)
-                            </label>
-                            <input
-                              type="text"
-                              id="keywords"
-                              name="keywords"
-                              value={formData.keywords}
-                              onChange={handleInputChange}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                              placeholder="seo, marketing, website"
-                            />
-                          </div>
-
-                          <div>
-                            <label htmlFor="slug" className="block text-sm font-medium text-gray-700 mb-2">
-                              Custom Slug (optional)
-                            </label>
-                            <input
-                              type="text"
-                              id="slug"
-                              name="slug"
-                              value={formData.slug}
-                              onChange={handleInputChange}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                              placeholder="custom-url-slug"
-                              disabled={!!editingSlug}
-                            />
-                            {editingSlug && (
-                              <p className="text-xs text-gray-500 mt-1">
-                                Slug cannot be changed when editing
-                              </p>
+              {Object.keys(redirects).length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <span className="text-2xl">📋</span>
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-900 mb-2">No Redirects Yet</h3>
+                  <p className="text-gray-600 mb-4">Create your first redirect to get started</p>
+                  <button
+                    onClick={() => setActiveTab('create')}
+                    className="btn-primary"
+                  >
+                    Create First Redirect
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {Object.entries(redirects).map(([slug, data]) => (
+                    <div key={slug} className="border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="flex-1">
+                          <h3 className="text-lg font-semibold text-gray-900 mb-2">{data.title}</h3>
+                          <p className="text-gray-600 text-sm mb-3">{data.desc}</p>
+                          
+                          <div className="flex flex-wrap gap-2 mb-3">
+                            <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium">
+                              {data.type}
+                            </span>
+                            {data.site_name && (
+                              <span className="bg-gray-100 text-gray-800 px-2 py-1 rounded text-xs">
+                                {data.site_name}
+                              </span>
                             )}
                           </div>
+
+                          <div className="space-y-2">
+                            <div className="flex items-center space-x-2">
+                              <span className="text-sm font-medium text-gray-700">Short URL:</span>
+                              <code className="bg-gray-100 px-2 py-1 rounded text-sm">{baseUrl}/{slug}</code>
+                              <button
+                                onClick={() => copyToClipboard(`${baseUrl}/${slug}`, 'Short URL')}
+                                className="text-blue-600 hover:text-blue-700 text-sm"
+                              >
+                                Copy
+                              </button>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <span className="text-sm font-medium text-gray-700">Destination:</span>
+                              <a
+                                href={data.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:text-blue-700 text-sm truncate max-w-md"
+                              >
+                                {data.url}
+                              </a>
+                            </div>
+                          </div>
                         </div>
 
-                        <div className="flex items-center space-x-4">
-                          <button
-                            type="submit"
-                            disabled={isLoading}
-                            className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                        <div className="flex space-x-2 ml-4">
+                          <a
+                            href={`/${slug}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 transition-colors"
                           >
-                            {isLoading ? (
-                              <>
-                                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                {editingSlug ? 'Updating...' : 'Creating...'}
-                              </>
-                            ) : (
-                              <>
-                                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                                </svg>
-                                {editingSlug ? 'Update Redirect' : 'Create Redirect'}
-                              </>
-                            )}
+                            View
+                          </a>
+                          <button
+                            onClick={() => handleDelete(slug)}
+                            className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 transition-colors"
+                          >
+                            Delete
                           </button>
-
-                          {editingSlug && (
-                            <button
-                              type="button"
-                              onClick={cancelEdit}
-                              className="bg-gray-300 text-gray-700 px-6 py-2 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
-                            >
-                              Cancel
-                            </button>
-                          )}
-                        </div>
-                      </form>
-                    </div>
-                  </div>
-
-                  {/* Sidebar */}
-                  <div className="space-y-6">
-                    {/* Generated URLs */}
-                    {generatedUrls && (
-                      <div className="bg-white rounded-lg shadow p-6">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                          <svg className="w-5 h-5 mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                          Generated URLs
-                        </h3>
-                        
-                        <div className="space-y-4">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Short URL</label>
-                            <div className="flex items-center space-x-2">
-                              <input
-                                type="text"
-                                value={generatedUrls.short}
-                                readOnly
-                                className="flex-1 px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-sm font-mono"
-                              />
-                              <button
-                                onClick={() => copyToClipboard(generatedUrls.short)}
-                                className="p-2 text-gray-500 hover:text-gray-700 transition-colors"
-                                title="Copy URL"
-                              >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                </svg>
-                              </button>
-                            </div>
-                          </div>
-                          
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Long URL</label>
-                            <div className="flex items-center space-x-2">
-                              <textarea
-                                value={generatedUrls.long}
-                                readOnly
-                                rows={3}
-                                className="flex-1 px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-sm font-mono resize-none"
-                              />
-                              <button
-                                onClick={() => copyToClipboard(generatedUrls.long)}
-                                className="p-2 text-gray-500 hover:text-gray-700 transition-colors"
-                                title="Copy URL"
-                              >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                </svg>
-                              </button>
-                            </div>
-                          </div>
                         </div>
                       </div>
-                    )}
-
-                    {/* Tips */}
-                    <div className="bg-white rounded-lg shadow p-6">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">SEO Tips</h3>
-                      <ul className="space-y-2 text-sm text-gray-600">
-                        <li className="flex items-start">
-                          <span className="text-green-500 mr-2">•</span>
-                          Use descriptive, keyword-rich titles
-                        </li>
-                        <li className="flex items-start">
-                          <span className="text-green-500 mr-2">•</span>
-                          Keep descriptions between 150-160 characters
-                        </li>
-                        <li className="flex items-start">
-                          <span className="text-green-500 mr-2">•</span>
-                          Include relevant keywords naturally
-                        </li>
-                        <li className="flex items-start">
-                          <span className="text-green-500 mr-2">•</span>
-                          Use high-quality images (1200x630px)
-                        </li>
-                        <li className="flex items-start">
-                          <span className="text-green-500 mr-2">•</span>
-                          Submit sitemap to Google Search Console
-                        </li>
-                      </ul>
                     </div>
-                  </div>
+                  ))}
                 </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Analytics Tab */}
+        {activeTab === 'analytics' && (
+          <div className="bg-white rounded-2xl shadow-lg p-8">
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">Analytics</h2>
+              <p className="text-gray-600">Track views and clicks for your redirects</p>
+            </div>
+
+            {Object.keys(analytics).length === 0 ? (
+              <div className="text-center py-12">
+                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <span className="text-2xl">📊</span>
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">No Analytics Data</h3>
+                <p className="text-gray-600">Analytics will appear here once your redirects start receiving traffic</p>
               </div>
-            )}
-
-            {/* Manage Redirects Tab */}
-            {activeTab === 'manage' && (
-              <div>
-                <div className="mb-8">
-                  <h1 className="text-3xl font-bold text-gray-900 mb-2">Manage Redirects</h1>
-                  <p className="text-gray-600">View, edit, and delete your existing redirects</p>
-                </div>
-
-                {Object.keys(redirects).length === 0 ? (
-                  <div className="bg-white rounded-lg shadow p-12 text-center">
-                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                      </svg>
+            ) : (
+              <div className="space-y-4">
+                {Object.entries(analytics).map(([slug, data]) => (
+                  <div key={slug} className="border border-gray-200 rounded-lg p-6">
+                    <div className="flex justify-between items-start mb-4">
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900 mb-1">{data.title}</h3>
+                        <code className="text-sm text-gray-600">{baseUrl}/{slug}</code>
+                      </div>
                     </div>
-                    <h3 className="text-xl font-semibold text-gray-900 mb-2">No redirects found</h3>
-                    <p className="text-gray-600 mb-6">Create your first redirect to get started</p>
-                    <button
-                      onClick={() => setActiveTab('create')}
-                      className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition-colors"
-                    >
-                      Create Redirect
-                    </button>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {Object.entries(redirects).map(([slug, data]) => (
-                      <div key={slug} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">
-                        {/* Image Preview */}
-                        {data.image ? (
-                          <div className="aspect-video overflow-hidden bg-gray-100">
-                            <img 
-                              src={data.image} 
-                              alt={data.title}
-                              className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
-                              onError={(e) => {
-                                const target = e.target as HTMLImageElement;
-                                target.style.display = 'none';
-                                const parent = target.parentElement;
-                                if (parent) {
-                                  parent.innerHTML = `
-                                    <div class="w-full h-full flex items-center justify-center bg-gray-100">
-                                      <div class="text-center text-gray-400">
-                                        <svg class="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                        </svg>
-                                        <p class="text-sm">No Image</p>
-                                      </div>
-                                    </div>
-                                  `;
-                                }
-                              }}
-                            />
-                          </div>
-                        ) : (
-                          <div className="aspect-video bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
-                            <div className="text-center text-gray-400">
-                              <svg className="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                              </svg>
-                              <p className="text-sm font-medium">No Image</p>
-                            </div>
-                          </div>
-                        )}
-                        
-                        <div className="p-6">
-                          {/* Header */}
-                          <div className="flex items-start justify-between mb-4">
-                            <div className="flex-1 min-w-0">
-                              <h3 className="font-bold text-gray-900 text-lg leading-tight mb-2" title={data.title}>
-                                {data.title.length > 50 ? `${data.title.substring(0, 50)}...` : data.title}
-                              </h3>
-                              <div className="flex items-center space-x-2 text-sm text-gray-500 mb-2">
-                                <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs font-medium">
-                                  {data.type}
-                                </span>
-                                <span>•</span>
-                                <span className="font-mono text-xs">/{slug}</span>
-                              </div>
-                            </div>
-                          </div>
-                          
-                          {/* Description */}
-                          <p className="text-sm text-gray-600 mb-4 line-clamp-3 leading-relaxed">
-                            {data.desc.length > 120 ? `${data.desc.substring(0, 120)}...` : data.desc}
-                          </p>
-                          
-                          {/* Site Name */}
-                          {data.site_name && (
-                            <div className="flex items-center text-xs text-gray-500 mb-4">
-                              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9" />
-                              </svg>
-                              {data.site_name}
-                            </div>
-                          )}
-                          
-                          {/* Keywords */}
-                          {data.keywords && (
-                            <div className="flex flex-wrap gap-1 mb-4">
-                              {data.keywords.split(',').slice(0, 3).map((keyword, index) => (
-                                <span 
-                                  key={index}
-                                  className="bg-gray-100 text-gray-600 px-2 py-1 rounded-full text-xs font-medium"
-                                >
-                                  #{keyword.trim()}
-                                </span>
-                              ))}
-                              {data.keywords.split(',').length > 3 && (
-                                <span className="bg-gray-100 text-gray-500 px-2 py-1 rounded-full text-xs">
-                                  +{data.keywords.split(',').length - 3} more
-                                </span>
-                              )}
-                            </div>
-                          )}
-                          
-                          {/* Action Buttons */}
-                          <div className="flex items-center space-x-2">
-                            <button
-                              onClick={() => viewRedirect(slug)}
-                              className="flex-1 bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors flex items-center justify-center"
-                              title="View redirect page"
-                            >
-                              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                              </svg>
-                              View
-                            </button>
-                            <button
-                              onClick={() => handleEdit(slug, data)}
-                              className="flex-1 bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex items-center justify-center"
-                              title="Edit redirect"
-                            >
-                              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                              </svg>
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleDelete(slug)}
-                              className="flex-1 bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition-colors flex items-center justify-center"
-                              title="Delete redirect"
-                            >
-                              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
-                              Delete
-                            </button>
-                          </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="bg-blue-50 rounded-lg p-4">
+                        <div className="text-2xl font-bold text-blue-600">{data.analytics?.views || 0}</div>
+                        <div className="text-sm text-blue-600">Views</div>
+                      </div>
+                      <div className="bg-green-50 rounded-lg p-4">
+                        <div className="text-2xl font-bold text-green-600">{data.analytics?.clicks || 0}</div>
+                        <div className="text-sm text-green-600">Clicks</div>
+                      </div>
+                      <div className="bg-purple-50 rounded-lg p-4">
+                        <div className="text-sm font-medium text-purple-600">Last Viewed</div>
+                        <div className="text-xs text-purple-600">
+                          {data.analytics?.lastViewed ? new Date(data.analytics.lastViewed).toLocaleDateString() : 'Never'}
                         </div>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Analytics Tab */}
-            {activeTab === 'analytics' && (
-              <div>
-                <div className="mb-8">
-                  <h1 className="text-3xl font-bold text-gray-900 mb-2">Analytics Dashboard</h1>
-                  <p className="text-gray-600">Track performance metrics for your redirects</p>
-                </div>
-
-                {/* Overview Stats */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                  <div className="bg-white rounded-lg shadow p-6">
-                    <div className="flex items-center">
-                      <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mr-4">
-                        <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                        </svg>
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-600">Total Redirects</p>
-                        <p className="text-2xl font-bold text-gray-900">{Object.keys(analytics).length}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-white rounded-lg shadow p-6">
-                    <div className="flex items-center">
-                      <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mr-4">
-                        <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                        </svg>
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-600">Total Views</p>
-                        <p className="text-2xl font-bold text-gray-900">{getTotalViews()}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-white rounded-lg shadow p-6">
-                    <div className="flex items-center">
-                      <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mr-4">
-                        <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
-                        </svg>
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-600">Total Clicks</p>
-                        <p className="text-2xl font-bold text-gray-900">{getTotalClicks()}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-white rounded-lg shadow p-6">
-                    <div className="flex items-center">
-                      <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center mr-4">
-                        <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                        </svg>
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-600">Avg. CTR</p>
-                        <p className="text-2xl font-bold text-gray-900">
-                          {getTotalViews() > 0 ? ((getTotalClicks() / getTotalViews()) * 100).toFixed(1) : '0'}%
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Top Performers */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-                  <div className="bg-white rounded-lg shadow p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Performing Redirects</h3>
-                    <div className="space-y-4">
-                      {getTopPerformers().map(([slug, data], index) => (
-                        <div key={slug} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">{data.title}</p>
-                            <p className="text-xs text-gray-500 font-mono">/{slug}</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-sm font-bold text-gray-900">{data.analytics?.views || 0} views</p>
-                            <p className="text-xs text-gray-500">{data.analytics?.clicks || 0} clicks</p>
-                          </div>
+                      <div className="bg-orange-50 rounded-lg p-4">
+                        <div className="text-sm font-medium text-orange-600">Last Clicked</div>
+                        <div className="text-xs text-orange-600">
+                          {data.analytics?.lastClicked ? new Date(data.analytics.lastClicked).toLocaleDateString() : 'Never'}
                         </div>
-                      ))}
-                      {getTopPerformers().length === 0 && (
-                        <p className="text-gray-500 text-center py-4">No data available yet</p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="bg-white rounded-lg shadow p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Activity</h3>
-                    <div className="space-y-4">
-                      {Object.entries(analytics)
-                        .filter(([, data]) => data.analytics?.lastViewed || data.analytics?.lastClicked)
-                        .sort(([, a], [, b]) => {
-                          const aTime = Math.max(
-                            new Date(a.analytics?.lastViewed || 0).getTime(),
-                            new Date(a.analytics?.lastClicked || 0).getTime()
-                          )
-                          const bTime = Math.max(
-                            new Date(b.analytics?.lastViewed || 0).getTime(),
-                            new Date(b.analytics?.lastClicked || 0).getTime()
-                          )
-                          return bTime - aTime
-                        })
-                        .slice(0, 5)
-                        .map(([slug, data]) => {
-                          const lastViewed = data.analytics?.lastViewed
-                          const lastClicked = data.analytics?.lastClicked
-                          const mostRecent = lastViewed && lastClicked 
-                            ? (new Date(lastViewed) > new Date(lastClicked) ? lastViewed : lastClicked)
-                            : lastViewed || lastClicked
-                          
-                          return (
-                            <div key={slug} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-900 truncate">{data.title}</p>
-                                <p className="text-xs text-gray-500 font-mono">/{slug}</p>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-xs text-gray-500">{formatDate(mostRecent)}</p>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      {Object.entries(analytics).filter(([, data]) => data.analytics?.lastViewed || data.analytics?.lastClicked).length === 0 && (
-                        <p className="text-gray-500 text-center py-4">No recent activity</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Detailed Analytics Table */}
-                <div className="bg-white rounded-lg shadow overflow-hidden">
-                  <div className="px-6 py-4 border-b border-gray-200">
-                    <h3 className="text-lg font-semibold text-gray-900">Detailed Analytics</h3>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Redirect
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Views
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Clicks
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            CTR
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Last Activity
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {Object.entries(analytics).map(([slug, data]) => {
-                          const views = data.analytics?.views || 0
-                          const clicks = data.analytics?.clicks || 0
-                          const ctr = views > 0 ? ((clicks / views) * 100).toFixed(1) : '0'
-                          const lastActivity = data.analytics?.lastViewed || data.analytics?.lastClicked
-                          
-                          return (
-                            <tr key={slug} className="hover:bg-gray-50">
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div>
-                                  <div className="text-sm font-medium text-gray-900 truncate max-w-xs">
-                                    {data.title}
-                                  </div>
-                                  <div className="text-sm text-gray-500 font-mono">/{slug}</div>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {views}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {clicks}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {ctr}%
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                {formatDate(lastActivity)}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                    {Object.keys(analytics).length === 0 && (
-                      <div className="text-center py-12">
-                        <p className="text-gray-500">No analytics data available yet</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* SEO Tools Tab */}
-            {activeTab === 'tools' && (
-              <div>
-                <div className="mb-8">
-                  <h1 className="text-3xl font-bold text-gray-900 mb-2">SEO Tools</h1>
-                  <p className="text-gray-600">Tools to help optimize your SEO performance</p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  <div className="bg-white rounded-lg shadow p-6">
-                    <div className="flex items-center mb-4">
-                      <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mr-4">
-                        <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900">Download Sitemap</h3>
-                        <p className="text-sm text-gray-600">Get your sitemap.xml file</p>
                       </div>
                     </div>
-                    <button
-                      onClick={downloadSitemap}
-                      className="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
-                    >
-                      Download Sitemap
-                    </button>
                   </div>
-
-                  <div className="bg-white rounded-lg shadow p-6">
-                    <div className="flex items-center mb-4">
-                      <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mr-4">
-                        <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                        </svg>
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900">View Sitemap</h3>
-                        <p className="text-sm text-gray-600">Open sitemap in browser</p>
-                      </div>
-                    </div>
-                    <a
-                      href="/sitemap.xml"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition-colors inline-block text-center"
-                    >
-                      View Sitemap
-                    </a>
-                  </div>
-
-                  <div className="bg-white rounded-lg shadow p-6">
-                    <div className="flex items-center mb-4">
-                      <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mr-4">
-                        <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                        </svg>
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900">Statistics</h3>
-                        <p className="text-sm text-gray-600">View redirect stats</p>
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-purple-600 mb-1">
-                        {Object.keys(redirects).length}
-                      </div>
-                      <div className="text-sm text-gray-600">Total Redirects</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-8 bg-white rounded-lg shadow p-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">SEO Best Practices</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <h4 className="font-medium text-gray-900 mb-2">Title Optimization</h4>
-                      <ul className="text-sm text-gray-600 space-y-1">
-                        <li>• Keep titles under 60 characters</li>
-                        <li>• Include primary keywords</li>
-                        <li>• Make titles compelling and clickable</li>
-                        <li>• Avoid keyword stuffing</li>
-                      </ul>
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-gray-900 mb-2">Description Guidelines</h4>
-                      <ul className="text-sm text-gray-600 space-y-1">
-                        <li>• Keep descriptions 150-160 characters</li>
-                        <li>• Include a clear call-to-action</li>
-                        <li>• Use relevant keywords naturally</li>
-                        <li>• Make each description unique</li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
+                ))}
               </div>
             )}
           </div>
-        </div>
+        )}
       </div>
-
-      <SimpleFooter />
     </div>
   )
 }
