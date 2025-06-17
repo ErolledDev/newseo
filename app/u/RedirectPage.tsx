@@ -129,9 +129,28 @@ export default function RedirectPage() {
     }
     canonical.setAttribute('href', url)
 
+    // Track page view for parameter-based redirects
+    trackAnalytics('parameter-based', 'view')
+
   }, [title, desc, url, image, keywords, siteName, type])
 
+  const trackAnalytics = async (slug: string, event: 'view' | 'click') => {
+    try {
+      await fetch('/api/analytics', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ slug, event }),
+      })
+    } catch (error) {
+      console.error('Failed to track analytics:', error)
+    }
+  }
+
   const continueReading = () => {
+    // Track click before redirecting
+    trackAnalytics('parameter-based', 'click')
     window.location.href = url
   }
 

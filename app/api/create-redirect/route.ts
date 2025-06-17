@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { adminDb } from '../../../lib/firebase-admin'
+import fs from 'fs'
+import path from 'path'
 
 interface FormData {
   title: string
@@ -10,6 +12,44 @@ interface FormData {
   site_name: string
   type: string
   slug: string
+}
+
+interface RedirectData extends Omit<FormData, 'slug'> {
+  createdAt: string
+  updatedAt: string
+  analytics: {
+    views: number
+    clicks: number
+    lastViewed: string
+    lastClicked: string
+  }
+}
+
+// Fallback to JSON file storage
+const getRedirectsFilePath = () => path.join(process.cwd(), 'redirects.json')
+
+const readRedirectsFromFile = (): { [slug: string]: RedirectData } => {
+  try {
+    const filePath = getRedirectsFilePath()
+    if (fs.existsSync(filePath)) {
+      const data = fs.readFileSync(filePath, 'utf8')
+      return JSON.parse(data)
+    }
+    return {}
+  } catch (error) {
+    console.error('Error reading redirects file:', error)
+    return {}
+  }
+}
+
+const writeRedirectsToFile = (redirects: { [slug: string]: RedirectData }) => {
+  try {
+    const filePath = getRedirectsFilePath()
+    fs.writeFileSync(filePath, JSON.stringify(redirects, null, 2))
+  } catch (error) {
+    console.error('Error writing redirects file:', error)
+    throw error
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -33,7 +73,7 @@ export async function POST(request: NextRequest) {
         .replace(/\s+/g, '-')
         .replace(/-+/g, '-')
         .trim()
-        .substring(0, 100) // Limit slug length
+        .substring(0, 100)
     }
     
     // Ensure slug is valid
@@ -41,17 +81,8 @@ export async function POST(request: NextRequest) {
       slug = 'redirect-' + Date.now()
     }
     
-    // Check if slug already exists (for new redirects, not updates)
-    if (!data.slug) {
-      const existingDoc = await adminDb.collection('redirects').doc(slug).get()
-      if (existingDoc.exists) {
-        // If slug exists, append timestamp
-        slug = `${slug}-${Date.now()}`
-      }
-    }
-    
     // Create redirect data object
-    const redirectData = {
+    const redirectData: RedirectData = {
       title: data.title.trim(),
       desc: data.desc.trim(),
       url: data.url.trim(),
@@ -60,11 +91,37 @@ export async function POST(request: NextRequest) {
       site_name: data.site_name ? data.site_name.trim() : '',
       type: data.type || 'website',
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      analytics: {
+        views: 0,
+        clicks: 0,
+        lastViewed: '',
+        lastClicked: ''
+      }
     }
     
-    // Add or update redirect in Firestore
-    await adminDb.collection('redirects').doc(slug).set(redirectData)
+    let useFirebase = true
+    
+    try {
+      // Try Firebase first
+      await adminDb.collection('redirects').doc(slug).set(redirectData)
+      console.log(`Successfully saved to Firebase: ${slug}`)
+    } catch (firebaseError) {
+      console.warn('Firebase save failed, using file fallback:', firebaseError)
+      useFirebase = false
+      
+      // Fallback to file storage
+      const redirects = readRedirectsFromFile()
+      
+      // Check if slug already exists (for new redirects, not updates)
+      if (!data.slug && redirects[slug]) {
+        slug = `${slug}-${Date.now()}`
+      }
+      
+      redirects[slug] = redirectData
+      writeRedirectsToFile(redirects)
+      console.log(`Successfully saved to file: ${slug}`)
+    }
     
     // Generate URLs
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
@@ -81,19 +138,17 @@ export async function POST(request: NextRequest) {
     const longUrl = `${baseUrl}/u?${params.toString()}`
     const shortUrl = `${baseUrl}/${slug}`
     
-    console.log(`Successfully created/updated redirect: ${slug}`)
-    
     return NextResponse.json({
       long: longUrl,
       short: shortUrl,
       slug: slug,
-      success: true
+      success: true,
+      storage: useFirebase ? 'firebase' : 'file'
     })
     
   } catch (error) {
     console.error('Error creating redirect:', error)
     
-    // Provide more specific error messages
     if (error instanceof SyntaxError) {
       return NextResponse.json(
         { error: 'Invalid JSON data provided' },

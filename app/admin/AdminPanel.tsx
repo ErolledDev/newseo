@@ -21,6 +21,16 @@ interface FormData extends RedirectData {
   slug: string
 }
 
+interface AnalyticsData {
+  title: string
+  analytics: {
+    views: number
+    clicks: number
+    lastViewed: string
+    lastClicked: string
+  }
+}
+
 export default function AdminPanel() {
   const { showSuccess, showError, showConfirm } = useToast()
   const { logout } = useAuth()
@@ -38,13 +48,17 @@ export default function AdminPanel() {
   })
   const [isLoading, setIsLoading] = useState(false)
   const [redirects, setRedirects] = useState<{ [slug: string]: RedirectData }>({})
+  const [analytics, setAnalytics] = useState<{ [slug: string]: AnalyticsData }>({})
   const [generatedUrls, setGeneratedUrls] = useState<{ long: string; short: string } | null>(null)
   const [editingSlug, setEditingSlug] = useState<string | null>(null)
 
   // Fetch existing redirects
   useEffect(() => {
     fetchRedirects()
-  }, [])
+    if (activeTab === 'analytics') {
+      fetchAnalytics()
+    }
+  }, [activeTab])
 
   const fetchRedirects = async () => {
     try {
@@ -55,6 +69,19 @@ export default function AdminPanel() {
       }
     } catch (error) {
       console.error('Error fetching redirects:', error)
+    }
+  }
+
+  const fetchAnalytics = async () => {
+    try {
+      const response = await fetch('/api/analytics')
+      if (response.ok) {
+        const data = await response.json()
+        setAnalytics(data)
+      }
+    } catch (error) {
+      console.error('Error fetching analytics:', error)
+      showError('Error', 'Failed to load analytics data')
     }
   }
 
@@ -103,9 +130,10 @@ export default function AdminPanel() {
           short: result.short
         })
         
+        const storageType = result.storage === 'firebase' ? 'Firebase' : 'Local File'
         showSuccess(
           editingSlug ? 'Redirect Updated!' : 'Redirect Created!',
-          `Your ${editingSlug ? 'updated' : 'new'} redirect is ready to use.`
+          `Your ${editingSlug ? 'updated' : 'new'} redirect is ready to use. Saved to: ${storageType}`
         )
         
         // Reset form if creating new
@@ -241,9 +269,35 @@ export default function AdminPanel() {
     )
   }
 
+  const formatDate = (dateString: string) => {
+    if (!dateString) return 'Never'
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+
+  const getTotalViews = () => {
+    return Object.values(analytics).reduce((total, item) => total + (item.analytics?.views || 0), 0)
+  }
+
+  const getTotalClicks = () => {
+    return Object.values(analytics).reduce((total, item) => total + (item.analytics?.clicks || 0), 0)
+  }
+
+  const getTopPerformers = () => {
+    return Object.entries(analytics)
+      .sort(([, a], [, b]) => (b.analytics?.views || 0) - (a.analytics?.views || 0))
+      .slice(0, 5)
+  }
+
   const tabs = [
     { id: 'create', name: 'Create Redirect', icon: '➕' },
     { id: 'manage', name: 'Manage Redirects', icon: '📋' },
+    { id: 'analytics', name: 'Analytics', icon: '📊' },
     { id: 'tools', name: 'SEO Tools', icon: '🛠️' }
   ]
 
@@ -780,6 +834,212 @@ export default function AdminPanel() {
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Analytics Tab */}
+            {activeTab === 'analytics' && (
+              <div>
+                <div className="mb-8">
+                  <h1 className="text-3xl font-bold text-gray-900 mb-2">Analytics Dashboard</h1>
+                  <p className="text-gray-600">Track performance metrics for your redirects</p>
+                </div>
+
+                {/* Overview Stats */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                  <div className="bg-white rounded-lg shadow p-6">
+                    <div className="flex items-center">
+                      <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mr-4">
+                        <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-600">Total Redirects</p>
+                        <p className="text-2xl font-bold text-gray-900">{Object.keys(analytics).length}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-lg shadow p-6">
+                    <div className="flex items-center">
+                      <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mr-4">
+                        <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-600">Total Views</p>
+                        <p className="text-2xl font-bold text-gray-900">{getTotalViews()}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-lg shadow p-6">
+                    <div className="flex items-center">
+                      <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mr-4">
+                        <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-600">Total Clicks</p>
+                        <p className="text-2xl font-bold text-gray-900">{getTotalClicks()}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-lg shadow p-6">
+                    <div className="flex items-center">
+                      <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center mr-4">
+                        <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-600">Avg. CTR</p>
+                        <p className="text-2xl font-bold text-gray-900">
+                          {getTotalViews() > 0 ? ((getTotalClicks() / getTotalViews()) * 100).toFixed(1) : '0'}%
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Top Performers */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+                  <div className="bg-white rounded-lg shadow p-6">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Performing Redirects</h3>
+                    <div className="space-y-4">
+                      {getTopPerformers().map(([slug, data], index) => (
+                        <div key={slug} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">{data.title}</p>
+                            <p className="text-xs text-gray-500 font-mono">/{slug}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-bold text-gray-900">{data.analytics?.views || 0} views</p>
+                            <p className="text-xs text-gray-500">{data.analytics?.clicks || 0} clicks</p>
+                          </div>
+                        </div>
+                      ))}
+                      {getTopPerformers().length === 0 && (
+                        <p className="text-gray-500 text-center py-4">No data available yet</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-lg shadow p-6">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Activity</h3>
+                    <div className="space-y-4">
+                      {Object.entries(analytics)
+                        .filter(([, data]) => data.analytics?.lastViewed || data.analytics?.lastClicked)
+                        .sort(([, a], [, b]) => {
+                          const aTime = Math.max(
+                            new Date(a.analytics?.lastViewed || 0).getTime(),
+                            new Date(a.analytics?.lastClicked || 0).getTime()
+                          )
+                          const bTime = Math.max(
+                            new Date(b.analytics?.lastViewed || 0).getTime(),
+                            new Date(b.analytics?.lastClicked || 0).getTime()
+                          )
+                          return bTime - aTime
+                        })
+                        .slice(0, 5)
+                        .map(([slug, data]) => {
+                          const lastViewed = data.analytics?.lastViewed
+                          const lastClicked = data.analytics?.lastClicked
+                          const mostRecent = lastViewed && lastClicked 
+                            ? (new Date(lastViewed) > new Date(lastClicked) ? lastViewed : lastClicked)
+                            : lastViewed || lastClicked
+                          
+                          return (
+                            <div key={slug} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-gray-900 truncate">{data.title}</p>
+                                <p className="text-xs text-gray-500 font-mono">/{slug}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-xs text-gray-500">{formatDate(mostRecent)}</p>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      {Object.entries(analytics).filter(([, data]) => data.analytics?.lastViewed || data.analytics?.lastClicked).length === 0 && (
+                        <p className="text-gray-500 text-center py-4">No recent activity</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Detailed Analytics Table */}
+                <div className="bg-white rounded-lg shadow overflow-hidden">
+                  <div className="px-6 py-4 border-b border-gray-200">
+                    <h3 className="text-lg font-semibold text-gray-900">Detailed Analytics</h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Redirect
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Views
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Clicks
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            CTR
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Last Activity
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {Object.entries(analytics).map(([slug, data]) => {
+                          const views = data.analytics?.views || 0
+                          const clicks = data.analytics?.clicks || 0
+                          const ctr = views > 0 ? ((clicks / views) * 100).toFixed(1) : '0'
+                          const lastActivity = data.analytics?.lastViewed || data.analytics?.lastClicked
+                          
+                          return (
+                            <tr key={slug} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div>
+                                  <div className="text-sm font-medium text-gray-900 truncate max-w-xs">
+                                    {data.title}
+                                  </div>
+                                  <div className="text-sm text-gray-500 font-mono">/{slug}</div>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {views}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {clicks}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {ctr}%
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {formatDate(lastActivity)}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                    {Object.keys(analytics).length === 0 && (
+                      <div className="text-center py-12">
+                        <p className="text-gray-500">No analytics data available yet</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 

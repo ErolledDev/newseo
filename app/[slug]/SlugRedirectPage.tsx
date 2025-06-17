@@ -29,9 +29,28 @@ export default function SlugRedirectPage({ data, allRedirects, currentSlug }: Pr
   // Update document title to match the fixed format
   useEffect(() => {
     document.title = `${data.title} | seo360`
-  }, [data.title])
+    
+    // Track page view
+    trackAnalytics(currentSlug, 'view')
+  }, [data.title, currentSlug])
+
+  const trackAnalytics = async (slug: string, event: 'view' | 'click') => {
+    try {
+      await fetch('/api/analytics', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ slug, event }),
+      })
+    } catch (error) {
+      console.error('Failed to track analytics:', error)
+    }
+  }
 
   const continueReading = () => {
+    // Track click before redirecting
+    trackAnalytics(currentSlug, 'click')
     window.location.href = data.url
   }
 

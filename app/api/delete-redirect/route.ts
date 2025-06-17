@@ -1,9 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { adminDb } from '../../../lib/firebase-admin'
+import fs from 'fs'
+import path from 'path'
+
+// Fallback to JSON file storage
+const getRedirectsFilePath = () => path.join(process.cwd(), 'redirects.json')
+
+const readRedirectsFromFile = () => {
+  try {
+    const filePath = getRedirectsFilePath()
+    if (fs.existsSync(filePath)) {
+      const data = fs.readFileSync(filePath, 'utf8')
+      return JSON.parse(data)
+    }
+    return {}
+  } catch (error) {
+    console.error('Error reading redirects file:', error)
+    return {}
+  }
+}
+
+const writeRedirectsToFile = (redirects: any) => {
+  try {
+    const filePath = getRedirectsFilePath()
+    fs.writeFileSync(filePath, JSON.stringify(redirects, null, 2))
+  } catch (error) {
+    console.error('Error writing redirects file:', error)
+    throw error
+  }
+}
 
 export async function DELETE(request: NextRequest) {
   try {
-    // Get slug from URL query parameters instead of request body
     const { searchParams } = new URL(request.url)
     const slug = searchParams.get('slug')
     
@@ -18,30 +46,47 @@ export async function DELETE(request: NextRequest) {
     const trimmedSlug = slug.trim()
     console.log('Processing delete for slug:', trimmedSlug)
     
-    // Check if redirect exists
-    const docRef = adminDb.collection('redirects').doc(trimmedSlug)
-    const doc = await docRef.get()
+    let useFirebase = true
+    let deletedItem: any = null
     
-    if (!doc.exists) {
-      console.error(`Redirect "${trimmedSlug}" not found`)
-      return NextResponse.json(
-        { error: `Redirect "${trimmedSlug}" not found` },
-        { status: 404 }
-      )
+    try {
+      // Try Firebase first
+      const docRef = adminDb.collection('redirects').doc(trimmedSlug)
+      const doc = await docRef.get()
+      
+      if (!doc.exists) {
+        throw new Error('Document not found in Firebase')
+      }
+      
+      deletedItem = doc.data()
+      await docRef.delete()
+      console.log(`Successfully deleted from Firebase: ${trimmedSlug}`)
+    } catch (firebaseError) {
+      console.warn('Firebase delete failed, using file fallback:', firebaseError)
+      useFirebase = false
+      
+      // Fallback to file storage
+      const redirects = readRedirectsFromFile()
+      
+      if (!redirects[trimmedSlug]) {
+        console.error(`Redirect "${trimmedSlug}" not found in file`)
+        return NextResponse.json(
+          { error: `Redirect "${trimmedSlug}" not found` },
+          { status: 404 }
+        )
+      }
+      
+      deletedItem = redirects[trimmedSlug]
+      delete redirects[trimmedSlug]
+      writeRedirectsToFile(redirects)
+      console.log(`Successfully deleted from file: ${trimmedSlug}`)
     }
-    
-    // Store the deleted item for logging
-    const deletedItem = doc.data()
-    
-    // Delete the redirect
-    await docRef.delete()
-    
-    console.log(`Successfully deleted redirect: ${trimmedSlug}`, deletedItem)
     
     return NextResponse.json({ 
       success: true, 
       message: `Redirect "${trimmedSlug}" deleted successfully`,
-      deletedSlug: trimmedSlug
+      deletedSlug: trimmedSlug,
+      storage: useFirebase ? 'firebase' : 'file'
     })
     
   } catch (error) {
