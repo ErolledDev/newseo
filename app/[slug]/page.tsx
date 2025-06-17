@@ -2,6 +2,8 @@ import { notFound } from 'next/navigation'
 import { Metadata } from 'next'
 import { adminDb } from '../../lib/firebase-admin'
 import SlugRedirectPage from './SlugRedirectPage'
+import fs from 'fs'
+import path from 'path'
 
 interface RedirectData {
   title: string
@@ -17,6 +19,20 @@ interface RedirectsData {
   [slug: string]: RedirectData
 }
 
+function readRedirectsFromFile(): RedirectsData {
+  try {
+    const filePath = path.join(process.cwd(), 'redirects.json')
+    if (fs.existsSync(filePath)) {
+      const fileContent = fs.readFileSync(filePath, 'utf8')
+      return JSON.parse(fileContent)
+    }
+    return {}
+  } catch (error) {
+    console.error('Error reading redirects from file:', error)
+    return {}
+  }
+}
+
 async function getRedirectData(slug: string): Promise<RedirectData | null> {
   try {
     const doc = await adminDb.collection('redirects').doc(slug).get()
@@ -28,8 +44,10 @@ async function getRedirectData(slug: string): Promise<RedirectData | null> {
     }
     return null
   } catch (error) {
-    console.error('Error reading redirect data:', error)
-    return null
+    console.error('Error reading redirect data from Firebase, trying file fallback:', error)
+    // Fallback to file-based data
+    const fileRedirects = readRedirectsFromFile()
+    return fileRedirects[slug] || null
   }
 }
 
@@ -47,8 +65,9 @@ async function getAllRedirects(): Promise<RedirectsData> {
     
     return redirects
   } catch (error) {
-    console.error('Error reading redirects:', error)
-    return {}
+    console.error('Error reading redirects from Firebase, trying file fallback:', error)
+    // Fallback to file-based data
+    return readRedirectsFromFile()
   }
 }
 

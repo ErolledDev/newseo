@@ -44,6 +44,7 @@ export default function AdminPanel() {
   const [isLoading, setIsLoading] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [activeTab, setActiveTab] = useState<'create' | 'manage' | 'analytics'>('create')
+  const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({})
 
   // Load redirects and analytics on component mount
   useEffect(() => {
@@ -79,12 +80,53 @@ export default function AdminPanel() {
     }
   }
 
+  const validateForm = () => {
+    const errors: { [key: string]: string } = {}
+    
+    if (!formData.title.trim()) {
+      errors.title = 'Title is required'
+    }
+    
+    if (!formData.desc.trim()) {
+      errors.desc = 'Description is required'
+    }
+    
+    if (!formData.url.trim()) {
+      errors.url = 'URL is required'
+    } else {
+      try {
+        new URL(formData.url)
+      } catch {
+        errors.url = 'Please enter a valid URL (including http:// or https://)'
+      }
+    }
+    
+    if (formData.image && formData.image.trim()) {
+      try {
+        new URL(formData.image)
+      } catch {
+        errors.image = 'Please enter a valid image URL'
+      }
+    }
+    
+    setFormErrors(errors)
+    return Object.keys(errors).length === 0
+  }
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target
     setFormData(prev => ({
       ...prev,
       [name]: value
     }))
+    
+    // Clear error when user starts typing
+    if (formErrors[name]) {
+      setFormErrors(prev => ({
+        ...prev,
+        [name]: ''
+      }))
+    }
   }
 
   const generateSlug = (title: string) => {
@@ -99,6 +141,12 @@ export default function AdminPanel() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    if (!validateForm()) {
+      showError('Validation Error', 'Please fix the errors below')
+      return
+    }
+    
     setIsSubmitting(true)
 
     try {
@@ -132,6 +180,7 @@ export default function AdminPanel() {
           type: 'website',
           slug: ''
         })
+        setFormErrors({})
         
         // Reload redirects
         await loadRedirects()
@@ -143,7 +192,7 @@ export default function AdminPanel() {
       }
     } catch (error) {
       console.error('Error creating redirect:', error)
-      showError('Creation Failed', 'An unexpected error occurred')
+      showError('Creation Failed', 'An unexpected error occurred. Please try again.')
     } finally {
       setIsSubmitting(false)
     }
@@ -280,9 +329,12 @@ export default function AdminPanel() {
                     value={formData.title}
                     onChange={handleInputChange}
                     required
-                    className="input-field"
+                    className={`input-field ${formErrors.title ? 'border-red-500 focus:ring-red-500' : ''}`}
                     placeholder="Enter the page title"
                   />
+                  {formErrors.title && (
+                    <p className="text-red-500 text-sm mt-1">{formErrors.title}</p>
+                  )}
                 </div>
 
                 <div>
@@ -296,9 +348,12 @@ export default function AdminPanel() {
                     value={formData.url}
                     onChange={handleInputChange}
                     required
-                    className="input-field"
+                    className={`input-field ${formErrors.url ? 'border-red-500 focus:ring-red-500' : ''}`}
                     placeholder="https://example.com/article"
                   />
+                  {formErrors.url && (
+                    <p className="text-red-500 text-sm mt-1">{formErrors.url}</p>
+                  )}
                 </div>
               </div>
 
@@ -313,9 +368,12 @@ export default function AdminPanel() {
                   onChange={handleInputChange}
                   required
                   rows={3}
-                  className="input-field"
+                  className={`input-field ${formErrors.desc ? 'border-red-500 focus:ring-red-500' : ''}`}
                   placeholder="Enter a compelling description for SEO"
                 />
+                {formErrors.desc && (
+                  <p className="text-red-500 text-sm mt-1">{formErrors.desc}</p>
+                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -329,9 +387,12 @@ export default function AdminPanel() {
                     name="image"
                     value={formData.image}
                     onChange={handleInputChange}
-                    className="input-field"
+                    className={`input-field ${formErrors.image ? 'border-red-500 focus:ring-red-500' : ''}`}
                     placeholder="https://example.com/image.jpg"
                   />
+                  {formErrors.image && (
+                    <p className="text-red-500 text-sm mt-1">{formErrors.image}</p>
+                  )}
                 </div>
 
                 <div>

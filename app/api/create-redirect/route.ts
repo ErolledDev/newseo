@@ -57,6 +57,28 @@ const writeRedirectsToFile = (redirects: { [slug: string]: RedirectData }) => {
   }
 }
 
+const generateSlug = (title: string): string => {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .trim()
+    .substring(0, 100)
+}
+
+const ensureUniqueSlug = (baseSlug: string, existingRedirects: { [slug: string]: RedirectData }): string => {
+  let slug = baseSlug
+  let counter = 1
+  
+  while (existingRedirects[slug]) {
+    slug = `${baseSlug}-${counter}`
+    counter++
+  }
+  
+  return slug
+}
+
 export async function POST(request: NextRequest) {
   try {
     const data: FormData = await request.json()
@@ -68,21 +90,28 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Validate URL format
+    try {
+      new URL(data.url)
+    } catch (urlError) {
+      return NextResponse.json(
+        { error: 'Please provide a valid URL (including http:// or https://)' },
+        { status: 400 }
+      )
+    }
     
     // Generate slug if not provided
-    let slug = data.slug
+    let slug = data.slug?.trim()
     if (!slug) {
-      slug = data.title
-        .toLowerCase()
-        .replace(/[^a-z0-9\s-]/g, '')
-        .replace(/\s+/g, '-')
-        .replace(/-+/g, '-')
-        .trim()
-        .substring(0, 100)
+      slug = generateSlug(data.title)
+    } else {
+      // Clean provided slug
+      slug = generateSlug(slug)
     }
     
     // Ensure slug is valid
-    if (!slug) {
+    if (!slug || slug.length < 1) {
       slug = 'redirect-' + Date.now()
     }
     
@@ -107,12 +136,30 @@ export async function POST(request: NextRequest) {
     
     let useFirebase = false
     let errorMessage = ''
+    let finalSlug = slug
     
     try {
-      // Try Firebase first
-      await adminDb.collection('redirects').doc(slug).set(redirectData)
+      // Try Firebase first with timeout
+      const checkDoc = await Promise.race([
+        adminDb.collection('redirects').doc(slug).get(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Firebase timeout')), 5000)
+        )
+      ])
+      
+      // Ensure unique slug in Firebase
+      if (checkDoc.exists) {
+        const redirectsSnapshot = await adminDb.collection('redirects').get()
+        const existingRedirects: { [slug: string]: RedirectData } = {}
+        redirectsSnapshot.forEach((doc) => {
+          existingRedirects[doc.id] = doc.data() as RedirectData
+        })
+        finalSlug = ensureUniqueSlug(slug, existingRedirects)
+      }
+      
+      await adminDb.collection('redirects').doc(finalSlug).set(redirectData)
       useFirebase = true
-      console.log(`Successfully saved to Firebase: ${slug}`)
+      console.log(`Successfully saved to Firebase: ${finalSlug}`)
     } catch (firebaseError) {
       console.warn('Firebase save failed, using file fallback:', firebaseError?.message || firebaseError)
       errorMessage = firebaseError?.message || 'Firebase connection failed'
@@ -121,14 +168,12 @@ export async function POST(request: NextRequest) {
       try {
         const redirects = readRedirectsFromFile()
         
-        // Check if slug already exists (for new redirects, not updates)
-        if (!data.slug && redirects[slug]) {
-          slug = `${slug}-${Date.now()}`
-        }
+        // Ensure unique slug in file storage
+        finalSlug = ensureUniqueSlug(slug, redirects)
         
-        redirects[slug] = redirectData
+        redirects[finalSlug] = redirectData
         writeRedirectsToFile(redirects)
-        console.log(`Successfully saved to file: ${slug}`)
+        console.log(`Successfully saved to file: ${finalSlug}`)
       } catch (fileError) {
         console.error('File storage also failed:', fileError)
         return NextResponse.json(
@@ -151,12 +196,12 @@ export async function POST(request: NextRequest) {
     })
     
     const longUrl = `${baseUrl}/u?${params.toString()}`
-    const shortUrl = `${baseUrl}/${slug}`
+    const shortUrl = `${baseUrl}/${finalSlug}`
     
     return NextResponse.json({
       long: longUrl,
       short: shortUrl,
-      slug: slug,
+      slug: finalSlug,
       success: true,
       storage: useFirebase ? 'firebase' : 'file',
       ...(errorMessage && { warning: `Firebase failed (${errorMessage}), used file storage as fallback` })

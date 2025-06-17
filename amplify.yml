@@ -13,7 +13,7 @@ frontend:
         - echo "NEXT_PUBLIC_BASE_URL=$NEXT_PUBLIC_BASE_URL" >> .env.local
         - echo "FIREBASE_PROJECT_ID=$FIREBASE_PROJECT_ID" >> .env.local
         - echo "FIREBASE_CLIENT_EMAIL=$FIREBASE_CLIENT_EMAIL" >> .env.local
-        - echo "FIREBASE_PRIVATE_KEY=$FIREBASE_PRIVATE_KEY" >> .env.local
+        - printf "FIREBASE_PRIVATE_KEY=%b\n" "$FIREBASE_PRIVATE_KEY" >> .env.local
     build:
       commands:
         - npm run build
