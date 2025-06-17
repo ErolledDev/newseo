@@ -46,10 +46,33 @@ try {
     throw new Error('Missing required Firebase Admin environment variables')
   }
 
-  // Initialize Firebase Admin
+  // Clean and validate the private key format
+  let privateKey = firebaseAdminConfig.privateKey
+  
+  // Remove any surrounding quotes that might have been added
+  if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
+    privateKey = privateKey.slice(1, -1)
+  }
+  if (privateKey.startsWith("'") && privateKey.endsWith("'")) {
+    privateKey = privateKey.slice(1, -1)
+  }
+  
+  // Ensure proper newline formatting
+  privateKey = privateKey.replace(/\\n/g, '\n')
+  
+  // Validate PEM format
+  if (!privateKey.includes('-----BEGIN PRIVATE KEY-----') || !privateKey.includes('-----END PRIVATE KEY-----')) {
+    throw new Error('Private key is not in valid PEM format')
+  }
+
+  // Initialize Firebase Admin with cleaned private key
   adminApp = getApps().length === 0 
     ? initializeApp({
-        credential: cert(firebaseAdminConfig),
+        credential: cert({
+          projectId: firebaseAdminConfig.projectId,
+          clientEmail: firebaseAdminConfig.clientEmail,
+          privateKey: privateKey,
+        }),
         projectId: process.env.FIREBASE_PROJECT_ID,
       }, 'admin')
     : getApps().find(app => app.name === 'admin')
